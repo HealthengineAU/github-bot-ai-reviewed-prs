@@ -57,9 +57,13 @@ export function makeOctokit(responses = {}) {
       return (typeof responder === "function" ? responder(vars) : responder) ?? {};
     },
     rest: {
+      actions: {
+        createWorkflowDispatch: record("rest.actions.createWorkflowDispatch"),
+      },
       repos: {
         createCommitStatus: record("rest.repos.createCommitStatus"),
         getCombinedStatusForRef: record("rest.repos.getCombinedStatusForRef"),
+        listPullRequestsAssociatedWithCommit: record("rest.repos.listPullRequestsAssociatedWithCommit"),
       },
       issues: {
         listComments: tag("rest.issues.listComments"),

@@ -48,7 +48,7 @@ test("skip-ai-review label short-circuits to a success status", async (t) => {
   assert.equal(octokit.calls.some((c) => c.method === "graphql"), false);
 });
 
-test("a bot-authored PR skips the AI review with a success status", async (t) => {
+test("a dependabot-authored PR skips the AI review by default with a success status", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
@@ -73,6 +73,63 @@ test("a bot-authored PR skips the AI review with a success status", async (t) =>
   assert.equal(statuses.length, 1);
   assert.equal(statuses[0].args.state, "success");
   assert.match(statuses[0].args.description, /skipped for author/i);
+});
+
+test("skip_authors config replaces the default skip list", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    config: { ai_review: { skip_authors: ["renovate[bot]"] } },
+    payload: {
+      pull_request: {
+        number: 1,
+        state: "open",
+        head: { sha: "abc123" },
+        user: { login: "Renovate[bot]", type: "Bot" },
+        labels: [],
+      },
+    },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /skipped for author/i);
+});
+
+test("a bot author not on the skip list is gated on human approvals", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    payload: {
+      pull_request: {
+        number: 1,
+        state: "open",
+        head: { sha: "abc123" },
+        user: { login: "renovate[bot]", type: "Bot" },
+        labels: [],
+      },
+    },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+
+  // No skip short-circuit — but with no human approvals yet, the default
+  // bot_pr_human_approvers gate (min: 2) holds the status at pending.
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+  assert.match(statuses[0].args.description, /Bot authored PR requires 2 approvals/);
 });
 
 test("a closed PR produces no status update", async (t) => {
@@ -178,6 +235,277 @@ test("a non-skip label removal is ignored", async (t) => {
   await flushDebounce(t);
 
   assert.equal(octokit.calls.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// bot_pr_human_approvers gate
+// ---------------------------------------------------------------------------
+
+function makeBotPr(overrides = {}) {
+  return {
+    number: 1,
+    state: "open",
+    head: { sha: "abc123" },
+    user: { login: "my-agent[bot]", type: "Bot", id: 900 },
+    labels: [],
+    requested_reviewers: [],
+    requested_teams: [],
+    ...overrides,
+  };
+}
+
+const approvalBy = (id, login, state = "APPROVED") => ({
+  user: { login, type: "User", id },
+  state,
+  submitted_at: "2026-07-01T00:00:00Z",
+});
+
+test("bot PR below the approval minimum stays pending with a progress count", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [approvalBy(1, "david")],
+  });
+  const context = makeContext({
+    octokit,
+    config: { ai_review: { bot_pr_human_approvers: { min: 2 } } },
+    payload: { pull_request: makeBotPr() },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+  assert.equal(statuses[0].args.description, "Bot authored PR requires 2 approvals (1/2)");
+});
+
+test("bot PR flips to success once the approval minimum is met", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [approvalBy(1, "david"), approvalBy(2, "erin")],
+  });
+  const context = makeContext({
+    octokit,
+    payload: {
+      review: approvalBy(2, "erin"),
+      pull_request: makeBotPr(),
+    },
+  });
+
+  await dispatch("pull_request_review.submitted", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /Bot authored PR has 2 human approvals/);
+});
+
+test("a superseding changes-requested review reopens the gate", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [
+      approvalBy(1, "david"),
+      approvalBy(2, "erin"),
+      approvalBy(1, "david", "CHANGES_REQUESTED"),
+    ],
+  });
+  const context = makeContext({
+    octokit,
+    payload: {
+      review: approvalBy(1, "david", "CHANGES_REQUESTED"),
+      pull_request: makeBotPr(),
+    },
+  });
+
+  await dispatch("pull_request_review.submitted", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+  assert.match(statuses[0].args.description, /requires 2 approvals \(1\/2\)/);
+});
+
+test("a dismissed approval reopens the gate", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [
+      approvalBy(1, "david"),
+      approvalBy(1, "david", "DISMISSED"),
+    ],
+  });
+  const context = makeContext({
+    octokit,
+    payload: {
+      review: approvalBy(1, "david", "DISMISSED"),
+      pull_request: makeBotPr(),
+    },
+  });
+
+  await dispatch("pull_request_review.dismissed", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+});
+
+test("bot approvals don't count towards the human minimum", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [
+      { user: { login: "other-bot[bot]", type: "Bot", id: 5 }, state: "APPROVED", submitted_at: "2026-07-01T00:00:00Z" },
+    ],
+  });
+  const context = makeContext({
+    octokit,
+    payload: { pull_request: makeBotPr() },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+});
+
+test("an excluded bot author bypasses the approval gate", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    config: {
+      ai_review: {
+        skip_authors: [],
+        bot_pr_human_approvers: { exclude: ["my-agent[bot]"] },
+      },
+    },
+    payload: { pull_request: makeBotPr() },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+
+  // Gate bypassed and no bot review activity → no status at all.
+  assert.equal(statusCalls(octokit).length, 0);
+});
+
+test("min: 0 disables the approval gate", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    config: { ai_review: { bot_pr_human_approvers: { min: 0 } } },
+    payload: { pull_request: makeBotPr() },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit).length, 0);
+});
+
+test("human-authored PRs are never gated on approvals", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    payload: {
+      pull_request: {
+        number: 1,
+        state: "open",
+        head: { sha: "abc123" },
+        user: { login: "david", type: "User", id: 1 },
+        labels: [],
+        requested_reviewers: [],
+        requested_teams: [],
+      },
+    },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit).length, 0);
+});
+
+test("a human review on a human PR is still ignored", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    payload: {
+      review: approvalBy(1, "david"),
+      pull_request: {
+        number: 1,
+        state: "open",
+        head: { sha: "abc123" },
+        user: { login: "someone", type: "User", id: 2 },
+        labels: [],
+      },
+    },
+  });
+
+  await dispatch("pull_request_review.submitted", context);
+  await flushDebounce(t);
+
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("gate satisfied with AI review activity shows the normal summary", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const auggie = { login: "augmentcode[bot]", type: "Bot", id: 77 };
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [
+      approvalBy(1, "david"),
+      approvalBy(2, "erin"),
+      {
+        user: auggie,
+        body: "Here is my review",
+        state: "COMMENTED",
+        submitted_at: "2026-07-01T00:05:00Z",
+        html_url: "https://example.com/review",
+      },
+    ],
+  });
+  const context = makeContext({
+    octokit,
+    payload: {
+      review: approvalBy(2, "erin"),
+      pull_request: makeBotPr(),
+    },
+  });
+
+  await dispatch("pull_request_review.submitted", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /Reviewed by Auggie/);
 });
 
 // ---------------------------------------------------------------------------

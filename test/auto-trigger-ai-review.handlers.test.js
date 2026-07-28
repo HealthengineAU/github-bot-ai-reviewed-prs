@@ -80,7 +80,7 @@ test("auto-trigger: ai_review.include_drafts=true includes draft PRs", async (t)
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
 });
 
-test("auto-trigger: bot-authored PRs are skipped", async (t) => {
+test("auto-trigger: dependabot-authored PRs are skipped by default", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
@@ -88,6 +88,26 @@ test("auto-trigger: bot-authored PRs are skipped", async (t) => {
     payload: makePayload({ user: { login: "dependabot[bot]", type: "Bot" } }),
   });
   assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: ai_review.skip_authors replaces the default skip list", async (t) => {
+  // dependabot is no longer on the list → it gets the normal invite flow…
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({ ai_review: { skip_authors: ["renovate[bot]"] } }),
+    payload: makePayload({ user: { login: "dependabot[bot]", type: "Bot" } }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+
+  // …while listed authors are skipped, case-insensitively.
+  const skippedOctokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit: skippedOctokit,
+    config: fakeConfig({ ai_review: { skip_authors: ["renovate[bot]"] } }),
+    payload: makePayload({ user: { login: "Renovate[bot]", type: "Bot" } }),
+  });
+  assert.equal(skippedOctokit.calls.length, 0);
 });
 
 test("auto-trigger: the skip-ai-review label is respected", async (t) => {

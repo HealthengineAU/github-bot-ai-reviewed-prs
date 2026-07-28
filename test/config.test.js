@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import {
   KNOWN_PROVIDERS,
   normalizeAiReview,
+  normalizeBotPrHumanApprovers,
   normalizeProviders,
+  normalizeSkipAuthors,
   loadAiReviewConfig,
 } from "../lib/config.js";
 import { matchesFilterPatterns } from "../lib/filter-patterns.js";
@@ -133,6 +135,57 @@ test("loadAiReviewConfig: exposes a providers Set and isProviderEnabled()", asyn
 });
 
 // ---------------------------------------------------------------------------
+// normalizeSkipAuthors
+// ---------------------------------------------------------------------------
+
+test("normalizeSkipAuthors: returns null for non-arrays", () => {
+  assert.equal(normalizeSkipAuthors(undefined), null);
+  assert.equal(normalizeSkipAuthors(null), null);
+  assert.equal(normalizeSkipAuthors("dependabot[bot]"), null);
+  assert.equal(normalizeSkipAuthors({}), null);
+});
+
+test("normalizeSkipAuthors: an explicit empty list means skip no one", () => {
+  const result = normalizeSkipAuthors([]);
+  assert.ok(result instanceof Set);
+  assert.equal(result.size, 0);
+});
+
+test("normalizeSkipAuthors: lower-cases, trims, and drops junk entries", () => {
+  const result = normalizeSkipAuthors(["  Dependabot[bot] ", "RENOVATE[bot]", "", 42, null]);
+  assert.deepEqual([...result].sort(), ["dependabot[bot]", "renovate[bot]"]);
+});
+
+test("loadAiReviewConfig: ai_review.skip_authors defaults to dependabot[bot]", async () => {
+  const ctx = makeContext({ configValue: null });
+  const config = await loadAiReviewConfig(ctx);
+  assert.deepEqual([...config.aiReview.skipAuthors], ["dependabot[bot]"]);
+  assert.ok(config.isAuthorSkipped("dependabot[bot]"));
+  assert.ok(config.isAuthorSkipped("Dependabot[bot]"));
+  assert.equal(config.isAuthorSkipped("renovate[bot]"), false);
+  assert.equal(config.isAuthorSkipped("david"), false);
+  assert.equal(config.isAuthorSkipped(null), false);
+  assert.equal(config.isAuthorSkipped(undefined), false);
+});
+
+test("loadAiReviewConfig: ai_review.skip_authors replaces the default", async () => {
+  const ctx = makeContext({
+    configValue: { ai_review: { skip_authors: ["renovate[bot]", "deploy-bot"] } },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.ok(config.isAuthorSkipped("renovate[bot]"));
+  assert.ok(config.isAuthorSkipped("Deploy-Bot"));
+  assert.equal(config.isAuthorSkipped("dependabot[bot]"), false);
+});
+
+test("loadAiReviewConfig: ai_review.skip_authors [] disables the skip entirely", async () => {
+  const ctx = makeContext({ configValue: { ai_review: { skip_authors: [] } } });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.aiReview.skipAuthors.size, 0);
+  assert.equal(config.isAuthorSkipped("dependabot[bot]"), false);
+});
+
+// ---------------------------------------------------------------------------
 // normalizeAiReview
 // ---------------------------------------------------------------------------
 
@@ -218,6 +271,56 @@ test("normalizeAiReview: invalid diff bounds fall back to defaults", () => {
     assert.equal(result.minDiffSize, 0, `min for ${String(bad)}`);
     assert.equal(result.maxDiffSize, 2000, `max for ${String(bad)}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// normalizeBotPrHumanApprovers
+// ---------------------------------------------------------------------------
+
+test("normalizeBotPrHumanApprovers: defaults for missing or junk values", () => {
+  for (const raw of [undefined, null, {}, "nonsense", 42, []]) {
+    const result = normalizeBotPrHumanApprovers(raw);
+    assert.equal(result.min, 2, JSON.stringify(raw));
+    assert.deepEqual([...result.exclude], ["dependabot[bot]"], JSON.stringify(raw));
+  }
+});
+
+test("normalizeBotPrHumanApprovers: accepts valid min, including 0", () => {
+  assert.equal(normalizeBotPrHumanApprovers({ min: 2 }).min, 2);
+  assert.equal(normalizeBotPrHumanApprovers({ min: 0 }).min, 0);
+});
+
+test("normalizeBotPrHumanApprovers: invalid min falls back to 2", () => {
+  for (const bad of ["2", -1, NaN, Infinity, {}, [], null]) {
+    assert.equal(normalizeBotPrHumanApprovers({ min: bad }).min, 2, String(bad));
+  }
+});
+
+test("normalizeBotPrHumanApprovers: exclude replaces the default, lower-cased", () => {
+  const result = normalizeBotPrHumanApprovers({ exclude: ["  Renovate[bot] ", "", 42] });
+  assert.deepEqual([...result.exclude], ["renovate[bot]"]);
+});
+
+test("normalizeBotPrHumanApprovers: an explicit empty exclude means no exemptions", () => {
+  const result = normalizeBotPrHumanApprovers({ exclude: [] });
+  assert.equal(result.exclude.size, 0);
+});
+
+test("normalizeAiReview: exposes botPrHumanApprovers with defaults", () => {
+  const result = normalizeAiReview({});
+  assert.equal(result.botPrHumanApprovers.min, 2);
+  assert.deepEqual([...result.botPrHumanApprovers.exclude], ["dependabot[bot]"]);
+});
+
+test("loadAiReviewConfig: exposes ai_review.bot_pr_human_approvers", async () => {
+  const ctx = makeContext({
+    configValue: {
+      ai_review: { bot_pr_human_approvers: { min: 2, exclude: ["renovate[bot]"] } },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.aiReview.botPrHumanApprovers.min, 2);
+  assert.deepEqual([...config.aiReview.botPrHumanApprovers.exclude], ["renovate[bot]"]);
 });
 
 test("loadAiReviewConfig: exposes normalized aiReview settings", async () => {

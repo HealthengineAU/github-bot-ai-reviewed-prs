@@ -24,6 +24,12 @@ test("getBotDisplayName: maps known bot logins to friendly names", () => {
   assert.equal(getBotDisplayName("copilot-pull-request-reviewer[bot]"), "Copilot");
   assert.equal(getBotDisplayName("greptileai[bot]"), "Greptile");
   assert.equal(getBotDisplayName("linearb-bot[bot]"), "LinearB");
+  assert.equal(getBotDisplayName("dusty-the-robot[bot]"), "Dusty");
+});
+
+test("getBotDisplayName: exact-login names don't match other logins containing the substring", () => {
+  assert.equal(getBotDisplayName("dustyrhodes"), "dustyrhodes");
+  assert.equal(getBotDisplayName("dusty-the-robot"), "dusty-the-robot");
 });
 
 test("getBotDisplayName: falls back to the raw login when unknown", () => {
