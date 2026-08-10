@@ -5,11 +5,13 @@ import { register as registerCleanAiReviewComments } from "./lib/clean-ai-review
 import { register as registerDustySlackProxy } from "./lib/dusty-slack-proxy.js";
 import { register as registerTriggerAiReview } from "./lib/trigger-ai-review.js";
 
-export default (app) => {
+// Probot calls this with (app, { getRouter, cwd }) — getRouter is only present
+// when running under the HTTP server, and is what mounts non-webhook routes.
+export default (app, options = {}) => {
   registerAgentProxies(app);
   registerAIReviewCommitStatus(app);
   registerAutoTriggerAiReview(app);
   registerCleanAiReviewComments(app);
-  registerDustySlackProxy(app);
+  registerDustySlackProxy(app, options);
   registerTriggerAiReview(app);
 };
