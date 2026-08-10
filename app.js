@@ -2,6 +2,7 @@ import { register as registerAgentProxies } from "./lib/agent-proxies.js";
 import { register as registerAIReviewCommitStatus } from "./lib/ai-review-commit-status.js";
 import { register as registerAutoTriggerAiReview } from "./lib/auto-trigger-ai-review.js";
 import { register as registerCleanAiReviewComments } from "./lib/clean-ai-review-comments.js";
+import { register as registerDustySlackProxy } from "./lib/dusty-slack-proxy.js";
 import { register as registerTriggerAiReview } from "./lib/trigger-ai-review.js";
 
 export default (app) => {
@@ -9,5 +10,6 @@ export default (app) => {
   registerAIReviewCommitStatus(app);
   registerAutoTriggerAiReview(app);
   registerCleanAiReviewComments(app);
+  registerDustySlackProxy(app);
   registerTriggerAiReview(app);
 };
