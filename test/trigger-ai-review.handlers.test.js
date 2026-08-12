@@ -302,3 +302,119 @@ test("review_requested: an 'ai-review' team clears the request and triggers a re
   assert.equal(countCalls(octokit, "pulls.removeRequestedReviewers"), 1);
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
 });
+
+// ---------------------------------------------------------------------------
+// Tiered routing (lite / expensive / top-up)
+// ---------------------------------------------------------------------------
+
+const routingConfig = (raw = {}) => ({
+  providers: KNOWN_PROVIDERS,
+  ai_review: raw,
+});
+
+function routingOctokit({ additions = 10, deletions = 0, reviews = [] } = {}) {
+  return makeOctokit({
+    "rest.pulls.get": { data: { number: 1, additions, deletions } },
+    "paginate:rest.pulls.listReviews": reviews,
+    "paginate:rest.issues.listComments": [],
+  });
+}
+
+function aiReviewComment(octokit, config = routingConfig()) {
+  return makeContext({
+    octokit,
+    config,
+    payload: {
+      issue: { number: 1, pull_request: {} },
+      comment: { id: 5, body: "ai review", user: { type: "User" } },
+    },
+  });
+}
+
+test("issue_comment: a small mechanical PR routes to Copilot (Lite)", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = routingOctokit({ additions: 30 });
+  await dispatch("issue_comment.created", aiReviewComment(octokit));
+
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
+});
+
+test("issue_comment: a large PR routes to an expensive reviewer (Auggie)", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = routingOctokit({ additions: 500 });
+  await dispatch("issue_comment.created", aiReviewComment(octokit));
+
+  // Auggie is summoned by comment, not by a reviewer request.
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
+});
+
+test("issue_comment: a top-up on an already-reviewed PR routes to Copilot (Lite)", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = routingOctokit({
+    additions: 500,
+    reviews: [{ user: { type: "Bot", login: "augmentcode[bot]" } }],
+  });
+  await dispatch("issue_comment.created", aiReviewComment(octokit));
+
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});
+
+test("issue_comment: explicitly summoning Auggie on a small PR posts the advisory", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = routingOctokit({ additions: 12 });
+  const context = makeContext({
+    octokit,
+    config: routingConfig(),
+    payload: {
+      issue: { number: 1, pull_request: {} },
+      comment: { id: 5, body: "roast me auggie", user: { type: "User" } },
+    },
+  });
+  await dispatch("issue_comment.created", context);
+
+  const comments = octokit.calls.filter((c) => c.method === "rest.issues.createComment");
+  // The summon comment, then the advisory.
+  assert.equal(comments.length, 2);
+  assert.match(comments[1].args.body, /Copilot \(Lite\)/);
+  assert.match(comments[1].args.body, /12-line/);
+});
+
+test("issue_comment: explicitly summoning Auggie on a large PR posts no advisory", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = routingOctokit({ additions: 900 });
+  const context = makeContext({
+    octokit,
+    config: routingConfig(),
+    payload: {
+      issue: { number: 1, pull_request: {} },
+      comment: { id: 5, body: "roast me auggie", user: { type: "User" } },
+    },
+  });
+  await dispatch("issue_comment.created", context);
+
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
+});
+
+test("issue_comment: advise_on_expensive_small: false suppresses the advisory", async () => {
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = routingOctokit({ additions: 12 });
+  const context = makeContext({
+    octokit,
+    config: routingConfig({ advise_on_expensive_small: false }),
+    payload: {
+      issue: { number: 1, pull_request: {} },
+      comment: { id: 5, body: "roast me auggie", user: { type: "User" } },
+    },
+  });
+  await dispatch("issue_comment.created", context);
+
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
+});

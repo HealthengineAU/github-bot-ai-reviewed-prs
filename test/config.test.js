@@ -5,6 +5,7 @@ import {
   KNOWN_PROVIDERS,
   normalizeAiReview,
   normalizeBotPrHumanApprovers,
+  normalizeCopilotEfforts,
   normalizeProviders,
   normalizeSkipAuthors,
   loadAiReviewConfig,
@@ -341,4 +342,29 @@ test("loadAiReviewConfig: aiReview defaults apply when the key is absent", async
   const config = await loadAiReviewConfig(ctx);
   assert.equal(config.aiReview.automatic, false);
   assert.equal(config.aiReview.maxDiffSize, 2000);
+});
+
+// ---------------------------------------------------------------------------
+// copilot_efforts
+// ---------------------------------------------------------------------------
+
+test("normalizeCopilotEfforts: defaults to lite", () => {
+  assert.deepEqual([...normalizeCopilotEfforts(undefined)], ["lite"]);
+});
+
+test("normalizeCopilotEfforts: keeps known levels and drops the rest", () => {
+  assert.deepEqual([...normalizeCopilotEfforts(["Balanced", "deep", 7])], ["balanced"]);
+});
+
+test("normalizeCopilotEfforts: an empty or unusable list falls back", () => {
+  assert.deepEqual([...normalizeCopilotEfforts([])], ["lite"]);
+  assert.deepEqual([...normalizeCopilotEfforts("balanced")], ["lite"]);
+});
+
+test("normalizeAiReview: routing defaults", () => {
+  const config = normalizeAiReview(undefined);
+  assert.equal(config.mechanicalMaxDiffSize, 100);
+  assert.equal(config.mechanicalPaths, null);
+  assert.equal(config.topUpLite, true);
+  assert.equal(config.adviseOnExpensiveSmall, true);
 });

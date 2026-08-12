@@ -23,7 +23,21 @@
   - Commenting `ai review` (or `<provider> review` for a specific bot)
   - Requesting review from teams named `HealthengineAU/AI Review` or `HealthengineAU/<provider>`
   - Labelling a pull request with `ai-review` label
-- Automatically invites a random AI reviewer (opt-in via `ai_review.automatic`):
+- Routes each review to a reviewer that matches the change:
+  - Small "mechanical" PRs (≤ `ai_review.mechanical_max_diff_size`, default 100
+    changed lines, optionally restricted to `ai_review.mechanical_paths`) get a
+    cheap review — Copilot (Lite)
+  - Everything else gets an expensive one — Auggie, or Copilot (Balanced)
+  - A PR that already carries an AI review gets Copilot (Lite) for the top-up
+    (`ai_review.top_up_lite`)
+  - Explicitly summoning an expensive reviewer (`roast me auggie`, the Auggie
+    team) on a small mechanical PR still runs it, plus a one-line note pointing
+    at the cheaper option (`ai_review.advise_on_expensive_small`)
+  - **Copilot effort levels are not per-request**: GitHub picks them from the
+    org/repo default (there's no API parameter). `ai_review.copilot_efforts`
+    declares which levels that default gives us, so routing only offers a level
+    it can actually get — with the default `[lite]`, expensive reviews go to Auggie
+- Automatically invites an AI reviewer (opt-in via `ai_review.automatic`):
   - When a pull request is opened, marked ready for review, or reopened
   - Only when the PR has no completed AI review and no pending AI review
     request (a requested Copilot, an Auggie summon, an AI-review team request,
@@ -88,6 +102,17 @@ ai_review:
     - "dependabot[bot]"  # (exact logins, case-insensitive; [] to skip no one)
   min_diff_size: 0       # inclusive bounds on additions + deletions;
   max_diff_size: 2000    # PRs outside the range aren't auto-invited
+  mechanical_max_diff_size: 100  # at or under this, a PR is "mechanical" and
+                                 # gets a cheap review (Copilot Lite)
+  # mechanical_paths: ["docs/**", "*.md"]  # optional: a PR is only mechanical
+                                 # if every changed file matches. Omit to let
+                                 # size alone decide.
+  copilot_efforts: [lite]  # effort levels the org/repo Copilot default gives
+                           # us (GitHub has no per-request parameter):
+                           # [lite], [balanced], or both if it varies by repo
+  top_up_lite: true        # top-up reviews on an already-reviewed PR go Lite
+  advise_on_expensive_small: true  # note when an expensive reviewer is
+                                   # summoned manually on a mechanical PR
   bot_pr_human_approvers:  # human approvals required on bot-authored PRs
     min: 2                 # minimum number of human approvers
     exclude:               # bot authors exempt from the requirement
