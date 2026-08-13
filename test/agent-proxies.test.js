@@ -167,15 +167,15 @@ test("classifyComment: bots, ignore_users, the agent itself, and unmentioned for
 // classifyStatus
 // ---------------------------------------------------------------------------
 
-test("classifyStatus: a settled watched context forwards as a check", () => {
+test("classifyStatus: a failed watched context forwards as a check", () => {
   const a = agent();
   assert.equal(classifyStatus(a, { state: "failure", context: "buildkite/test" }), "check");
   assert.equal(classifyStatus(a, { state: "error", context: "buildkite/deploy" }), "check");
-  assert.equal(classifyStatus(a, { state: "success", context: "buildkite/test" }), "check");
 });
 
-test("classifyStatus: pending states or unwatched contexts are ignored", () => {
+test("classifyStatus: passing/pending states or unwatched contexts are ignored", () => {
   const a = agent();
+  assert.equal(classifyStatus(a, { state: "success", context: "buildkite/test" }), null);
   assert.equal(classifyStatus(a, { state: "pending", context: "buildkite/test" }), null);
   assert.equal(classifyStatus(a, { state: "failure", context: "netlify/deploy-preview" }), null);
 });

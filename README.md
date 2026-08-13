@@ -41,7 +41,7 @@
   - Removing links to unsupported features
   - Collapses summaries
 - Forwards activity to autonomous agent proxies (opt-in via `agents`):
-  - Wakes an agent when its own PRs receive a review, a comment, or a completed/failed/errored status check, and when it's `@`-mentioned on any PR
+  - Wakes an agent when its own PRs receive a review, a comment, or a failed/errored status check, and when it's `@`-mentioned on any PR
   - Coalesces bursts (debounced) and pokes the agent via a `workflow_dispatch`
     to a target it configures — the app itself knows nothing about any agent
 
