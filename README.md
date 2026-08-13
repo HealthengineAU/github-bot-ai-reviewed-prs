@@ -17,6 +17,8 @@
   - Tracks whether AI feedback has been addressed (i.e. resolved, responded to, is now outdated)
   - Can be skipped with `skip-ai-review` label, or for specific PR authors via
     `ai_review.skip_authors` (default `dependabot[bot]`)
+  - Passes automatically on PRs too small to be worth a review
+    (under `ai_review.min_diff_size` changed lines, default 10)
   - Holds bot-authored PRs at pending until enough humans have approved
     (`ai_review.bot_pr_human_approvers`, default 2; `exclude` exempts specific bots)
 - Triggers AI reviews:
@@ -86,8 +88,10 @@ ai_review:
   authors: ["*"]         # e.g. ["*", "!*-service-account"]
   skip_authors:          # PR authors whose PRs skip AI review entirely
     - "dependabot[bot]"  # (exact logins, case-insensitive; [] to skip no one)
-  min_diff_size: 0       # inclusive bounds on additions + deletions;
-  max_diff_size: 2000    # PRs outside the range aren't auto-invited
+  min_diff_size: 10      # inclusive bounds on additions + deletions;
+  max_diff_size: 2000    # PRs outside the range aren't auto-invited.
+                         # PRs under min_diff_size also pass the "AI Review"
+                         # status without a review (0 disables both)
   bot_pr_human_approvers:  # human approvals required on bot-authored PRs
     min: 2                 # minimum number of human approvers
     exclude:               # bot authors exempt from the requirement

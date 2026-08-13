@@ -203,7 +203,7 @@ test("normalizeAiReview: defaults for missing or junk values", () => {
     // …while repositories and authors default to match-everything.
     assert.ok(matchesFilterPatterns(result.repositories, "any-repo"));
     assert.ok(matchesFilterPatterns(result.authors, "anyone"));
-    assert.equal(result.minDiffSize, 0);
+    assert.equal(result.minDiffSize, 10);
     assert.equal(result.maxDiffSize, 2000);
   }
 });
@@ -263,12 +263,13 @@ test("normalizeAiReview: diff bounds accept valid numbers, including 0", () => {
   assert.equal(result.minDiffSize, 5);
   assert.equal(result.maxDiffSize, 100);
   assert.equal(normalizeAiReview({ max_diff_size: 0 }).maxDiffSize, 0);
+  assert.equal(normalizeAiReview({ min_diff_size: 0 }).minDiffSize, 0);
 });
 
 test("normalizeAiReview: invalid diff bounds fall back to defaults", () => {
   for (const bad of ["500", -1, NaN, Infinity, {}, []]) {
     const result = normalizeAiReview({ min_diff_size: bad, max_diff_size: bad });
-    assert.equal(result.minDiffSize, 0, `min for ${String(bad)}`);
+    assert.equal(result.minDiffSize, 10, `min for ${String(bad)}`);
     assert.equal(result.maxDiffSize, 2000, `max for ${String(bad)}`);
   }
 });

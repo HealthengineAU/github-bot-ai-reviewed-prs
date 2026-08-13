@@ -103,6 +103,122 @@ test("skip_authors config replaces the default skip list", async (t) => {
   assert.match(statuses[0].args.description, /skipped for author/i);
 });
 
+// ---------------------------------------------------------------------------
+// min_diff_size exemption
+// ---------------------------------------------------------------------------
+
+function makeSmallPrContext(octokit, { config, ...prOverrides } = {}) {
+  return makeContext({
+    octokit,
+    config,
+    payload: {
+      pull_request: {
+        number: 1,
+        state: "open",
+        head: { sha: "abc123" },
+        user: { login: "david", type: "User", id: 1 },
+        labels: [],
+        requested_reviewers: [],
+        requested_teams: [],
+        ...prOverrides,
+      },
+    },
+  });
+}
+
+test("a PR under min_diff_size passes without a review", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+
+  await dispatch("pull_request.opened", makeSmallPrContext(octokit, { additions: 6, deletions: 3 }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "success");
+  assert.match(statuses[0].args.description, /exempt from AI review \(9 lines changed\)/);
+  // Short-circuit: it should never fetch reviews/comments.
+  assert.equal(octokit.calls.some((c) => c.method === "graphql"), false);
+});
+
+test("a PR at min_diff_size is not exempt", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+
+  await dispatch("pull_request.opened", makeSmallPrContext(octokit, { additions: 10, deletions: 0 }));
+  await flushDebounce(t);
+
+  // No AI activity either → no status at all.
+  assert.equal(statusCalls(octokit).length, 0);
+});
+
+test("min_diff_size: 0 disables the exemption", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+
+  await dispatch("pull_request.opened", makeSmallPrContext(octokit, {
+    config: { ai_review: { min_diff_size: 0 } },
+    additions: 1,
+    deletions: 0,
+  }));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit).length, 0);
+});
+
+test("diff size missing from the payload is fetched from the PR", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit({
+    "rest.pulls.get": { data: { additions: 2, deletions: 0 } },
+  });
+
+  await dispatch("pull_request.opened", makeSmallPrContext(octokit));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.match(statuses[0].args.description, /exempt from AI review \(2 lines changed\)/);
+});
+
+test("an undeterminable diff size never exempts the PR", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit(); // rest.pulls.get returns {} — no additions
+
+  await dispatch("pull_request.opened", makeSmallPrContext(octokit));
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit).length, 0);
+});
+
+test("a tiny bot-authored PR is still held by the approval gate", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+
+  await dispatch("pull_request.opened", makeSmallPrContext(octokit, {
+    user: { login: "my-agent[bot]", type: "Bot", id: 900 },
+    additions: 1,
+    deletions: 0,
+  }));
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.equal(statuses[0].args.state, "pending");
+  assert.match(statuses[0].args.description, /requires 2 approvals/);
+});
+
 test("a bot author not on the skip list is gated on human approvals", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
