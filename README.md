@@ -15,8 +15,9 @@
     summoned (via any trigger below, a requested Copilot reviewer, or a
     human-typed `auggie review` comment), then flips to `Reviewed by …`
   - Tracks whether AI feedback has been addressed (i.e. resolved, responded to, is now outdated)
-  - Can be skipped with `skip-ai-review` label, or for specific PR authors via
-    `ai_review.skip_authors` (default `dependabot[bot]`)
+  - Can be skipped with the `ai_review.skip_label` label (no default — a label
+    only waives the review when the config names one), or for specific PR
+    authors via `ai_review.skip_authors` (default `dependabot[bot]`)
   - Passes automatically on PRs too small to be worth a review
     (under `ai_review.min_diff_size` changed lines, default 10)
   - Holds bot-authored PRs at pending until enough humans have approved
@@ -33,7 +34,8 @@
     `gitStream.cm` commit status)
   - Evaluated ~30s after the PR event so gitStream's status has time to land
   - Skips authors listed in `ai_review.skip_authors` (default `dependabot[bot]`),
-    PRs labelled `skip-ai-review`, and drafts (unless `ai_review.include_drafts: true`)
+    PRs carrying the `ai_review.skip_label` label, and drafts (unless
+    `ai_review.include_drafts: true`)
   - Configurable via `ai_review` (see below): target branches, repos, and
     authors as GitHub-Actions-style filter patterns, plus min/max diff size
     (defaults 0–2000 changed lines)
@@ -75,7 +77,9 @@ providers:
 #
 # branches / repositories / authors take GitHub-Actions-style filter patterns:
 # `*` (segment wildcard), `**` (spans "/", for branch names), and `!` to
-# negate a previous match — evaluated in order, last match wins.
+# negate a previous match — evaluated in order, last match wins. `[…]` matches
+# a character range (`v[0-9]`) or the bracketed text literally, so bot logins
+# like `dependabot[bot]` can be written as-is.
 # Quote patterns that start with * or ! (YAML special characters).
 ai_review:
   automatic: false       # set true to auto-invite a reviewer on eligible PRs
@@ -85,9 +89,11 @@ ai_review:
     - main
     - develop
   repositories: ["*"]    # e.g. ["*", "!legacy-monolith"]
-  authors: ["*"]         # e.g. ["*", "!*-service-account"]
+  authors: ["*"]         # e.g. ["*", "!*-service-account", "!dependabot[bot]"]
   skip_authors:          # PR authors whose PRs skip AI review entirely
     - "dependabot[bot]"  # (exact logins, case-insensitive; [] to skip no one)
+  # skip_label: skip-ai-review  # a PR carrying this label waives the review
+                                # (no default: unset means no label waives it)
   min_diff_size: 10      # inclusive bounds on additions + deletions;
   max_diff_size: 2000    # PRs outside the range aren't auto-invited.
                          # PRs under min_diff_size also pass the "AI Review"

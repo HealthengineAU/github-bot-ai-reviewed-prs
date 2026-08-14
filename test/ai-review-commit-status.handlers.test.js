@@ -19,13 +19,14 @@ function statusCalls(octokit) {
   );
 }
 
-test("skip-ai-review label short-circuits to a success status", async (t) => {
+test("the configured skip label short-circuits to a success status", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { app, dispatch } = makeApp();
   register(app);
   const octokit = makeOctokit();
   const context = makeContext({
     octokit,
+    config: { ai_review: { skip_label: "skip-ai-review" } },
     payload: {
       pull_request: {
         number: 1,
@@ -46,6 +47,34 @@ test("skip-ai-review label short-circuits to a success status", async (t) => {
   assert.match(statuses[0].args.description, /skipped/i);
   // Short-circuit: it should never fetch reviews/comments.
   assert.equal(octokit.calls.some((c) => c.method === "graphql"), false);
+});
+
+test("a skip label is ignored when the config doesn't name one", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    payload: {
+      pull_request: {
+        number: 1,
+        state: "open",
+        head: { sha: "abc123" },
+        user: { login: "david", type: "User" },
+        additions: 100,
+        deletions: 0,
+        labels: [{ name: "skip-ai-review" }],
+      },
+    },
+  });
+
+  await dispatch("pull_request.opened", context);
+  await flushDebounce(t);
+
+  assert.equal(statusCalls(octokit).length, 0);
+  // No short-circuit: the normal review picture is fetched.
+  assert.ok(octokit.calls.some((c) => c.method === "graphql"));
 });
 
 test("a dependabot-authored PR skips the AI review by default with a success status", async (t) => {
@@ -292,7 +321,12 @@ test("bursts of events are debounced into a single status update", async (t) => 
   for (let i = 0; i < 5; i++) {
     await dispatch(
       "pull_request.synchronize",
-      makeContext({ octokit, repo: "burst-repo", payload: makePayload() })
+      makeContext({
+        octokit,
+        repo: "burst-repo",
+        config: { ai_review: { skip_label: "skip-ai-review" } },
+        payload: makePayload(),
+      })
     );
   }
   await flushDebounce(t);
@@ -308,6 +342,7 @@ test("removing the skip label reverts the gate to pending immediately", async (t
   const octokit = makeOctokit();
   const context = makeContext({
     octokit,
+    config: { ai_review: { skip_label: "skip-ai-review" } },
     payload: {
       label: { name: "skip-ai-review" },
       pull_request: {

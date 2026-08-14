@@ -185,6 +185,25 @@ test("loadAiReviewConfig: ai_review.skip_authors [] disables the skip entirely",
   assert.equal(config.isAuthorSkipped("dependabot[bot]"), false);
 });
 
+test("loadAiReviewConfig: no skip label unless ai_review.skip_label names one", async () => {
+  const ctx = makeContext({ configValue: null });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.aiReview.skipLabel, null);
+  assert.equal(config.isSkipLabel("skip-ai-review"), false);
+  assert.equal(config.hasSkipLabel([{ name: "skip-ai-review" }]), false);
+  assert.equal(config.hasSkipLabel(undefined), false);
+});
+
+test("loadAiReviewConfig: ai_review.skip_label names the waiving label", async () => {
+  const ctx = makeContext({ configValue: { ai_review: { skip_label: "  skip-ai-review  " } } });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.aiReview.skipLabel, "skip-ai-review");
+  assert.ok(config.isSkipLabel("skip-ai-review"));
+  assert.equal(config.isSkipLabel("other"), false);
+  assert.ok(config.hasSkipLabel([{ name: "bug" }, { name: "skip-ai-review" }]));
+  assert.equal(config.hasSkipLabel([{ name: "bug" }]), false);
+});
+
 // ---------------------------------------------------------------------------
 // normalizeAiReview
 // ---------------------------------------------------------------------------

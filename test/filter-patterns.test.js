@@ -68,6 +68,22 @@ test("filter patterns: [] character ranges", () => {
   assert.equal(matches(["v[0-9]"], "va"), false);
 });
 
+test("filter patterns: [] also matches the bracketed text literally", () => {
+  assert.ok(matches(["dependabot[bot]"], "dependabot[bot]"));
+  assert.ok(matches(["dependabot[bot]"], "DEPENDABOT[BOT]"));
+  assert.equal(matches(["dependabot[bot]"], "dependabot"), false);
+});
+
+test("filter patterns: bot logins can be excluded by name", () => {
+  const patterns = ["*", "!healthengine-sre", "!dependabot[bot]", "!github-actions[bot]"];
+  assert.ok(matches(patterns, "david"));
+  assert.equal(matches(patterns, "healthengine-sre"), false);
+  assert.equal(matches(patterns, "dependabot[bot]"), false);
+  assert.equal(matches(patterns, "github-actions[bot]"), false);
+  // A different bot is still eligible.
+  assert.ok(matches(patterns, "renovate[bot]"));
+});
+
 test("filter patterns: regex specials in patterns are literal", () => {
   assert.ok(matches(["a.b"], "a.b"));
   assert.equal(matches(["a.b"], "axb"), false);

@@ -110,14 +110,24 @@ test("auto-trigger: ai_review.skip_authors replaces the default skip list", asyn
   assert.equal(skippedOctokit.calls.length, 0);
 });
 
-test("auto-trigger: the skip-ai-review label is respected", async (t) => {
+test("auto-trigger: the configured skip label is respected", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({ ai_review: { skip_label: "skip-ai-review" } }),
+    payload: makePayload({ labels: [{ name: "skip-ai-review" }] }),
+  });
+  assert.equal(octokit.calls.length, 0);
+});
+
+test("auto-trigger: a label is ignored when no skip_label is configured", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
     octokit,
     config: fakeConfig(),
     payload: makePayload({ labels: [{ name: "skip-ai-review" }] }),
   });
-  assert.equal(octokit.calls.length, 0);
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
 });
 
 // ---------------------------------------------------------------------------
