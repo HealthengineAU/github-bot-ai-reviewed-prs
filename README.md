@@ -98,6 +98,13 @@ ai_review:
   max_diff_size: 2000    # PRs outside the range aren't auto-invited.
                          # PRs under min_diff_size also pass the "AI Review"
                          # status without a review (0 disables both)
+  provider_groups:       # optional: restrict which providers an invite picks
+    - max_diff_size: 99  # from, by diff size. First matching band wins; a band
+      providers:         # picks at random from its (enabled) providers.
+        - copilot        # Bands only narrow the `providers` list above — if a
+    - min_diff_size: 100 # band's providers are all disabled, or no band covers
+      providers:         # the diff size, the full enabled pool is used.
+        - augment
   bot_pr_human_approvers:  # human approvals required on bot-authored PRs
     min: 2                 # minimum number of human approvers
     exclude:               # bot authors exempt from the requirement

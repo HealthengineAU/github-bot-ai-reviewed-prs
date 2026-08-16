@@ -424,3 +424,57 @@ test("auto-trigger: ready_for_review also summons", async (t) => {
   });
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
 });
+
+// ---------------------------------------------------------------------------
+// ai_review.provider_groups: routing by diff size
+// ---------------------------------------------------------------------------
+
+// Both providers are enabled, so the pick is only deterministic because the
+// bands narrow it: copilot is requested as a reviewer, Auggie is summoned by
+// comment — the two are trivially distinguishable.
+function groupedConfig(provider_groups) {
+  return fakeConfig({
+    providers: ["augment", "copilot"],
+    ai_review: { provider_groups },
+  });
+}
+
+const SIZE_BANDS = [
+  { max_diff_size: 99, providers: ["copilot"] },
+  { min_diff_size: 100, providers: ["augment"] },
+];
+
+test("auto-trigger: a small PR is routed to its band's provider", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: groupedConfig(SIZE_BANDS),
+    payload: makePayload({ additions: 40, deletions: 9 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
+});
+
+test("auto-trigger: a large PR is routed to its band's provider", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: groupedConfig(SIZE_BANDS),
+    payload: makePayload({ additions: 90, deletions: 90 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
+});
+
+test("auto-trigger: a band naming only disabled providers falls back to the enabled pool", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({
+      providers: ["copilot"],
+      ai_review: { provider_groups: [{ min_diff_size: 100, providers: ["augment"] }] },
+    }),
+    payload: makePayload({ additions: 200, deletions: 0 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});

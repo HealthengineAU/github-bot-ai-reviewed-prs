@@ -5,6 +5,7 @@ import {
   KNOWN_PROVIDERS,
   normalizeAiReview,
   normalizeBotPrHumanApprovers,
+  normalizeProviderGroups,
   normalizeProviders,
   normalizeSkipAuthors,
   loadAiReviewConfig,
@@ -361,4 +362,91 @@ test("loadAiReviewConfig: aiReview defaults apply when the key is absent", async
   const config = await loadAiReviewConfig(ctx);
   assert.equal(config.aiReview.automatic, false);
   assert.equal(config.aiReview.maxDiffSize, 2000);
+});
+
+// ---------------------------------------------------------------------------
+// normalizeProviderGroups / providersForDiffSize
+// ---------------------------------------------------------------------------
+
+test("normalizeProviderGroups: returns [] for non-arrays", () => {
+  assert.deepEqual(normalizeProviderGroups(undefined), []);
+  assert.deepEqual(normalizeProviderGroups(null), []);
+  assert.deepEqual(normalizeProviderGroups({ providers: ["copilot"] }), []);
+});
+
+test("normalizeProviderGroups: defaults the open ends of a band", () => {
+  const [small, large] = normalizeProviderGroups([
+    { max_diff_size: 99, providers: ["copilot"] },
+    { min_diff_size: 100, providers: ["augment"] },
+  ]);
+  assert.equal(small.minDiffSize, 0);
+  assert.equal(small.maxDiffSize, 99);
+  assert.deepEqual([...small.providers], ["copilot"]);
+  assert.equal(large.minDiffSize, 100);
+  assert.equal(large.maxDiffSize, Infinity);
+  assert.deepEqual([...large.providers], ["augment"]);
+});
+
+test("normalizeProviderGroups: drops bands without usable providers", () => {
+  const groups = normalizeProviderGroups([
+    { providers: ["bogus"] },
+    { providers: [] },
+    {},
+    { providers: ["copilot", "Augment"] },
+  ]);
+  assert.equal(groups.length, 1);
+  assert.deepEqual([...groups[0].providers].sort(), ["augment", "copilot"]);
+});
+
+test("providersForDiffSize: first matching band wins", async () => {
+  const ctx = makeContext({
+    configValue: {
+      providers: ["augment", "copilot"],
+      ai_review: {
+        provider_groups: [
+          { max_diff_size: 99, providers: ["copilot"] },
+          { min_diff_size: 100, providers: ["augment"] },
+        ],
+      },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.deepEqual([...config.providersForDiffSize(10)], ["copilot"]);
+  assert.deepEqual([...config.providersForDiffSize(99)], ["copilot"]);
+  assert.deepEqual([...config.providersForDiffSize(100)], ["augment"]);
+  assert.deepEqual([...config.providersForDiffSize(5000)], ["augment"]);
+});
+
+test("providersForDiffSize: null when no band matches, none configured, or the size is unknown", async () => {
+  const ctx = makeContext({
+    configValue: {
+      providers: ["augment", "copilot"],
+      ai_review: { provider_groups: [{ min_diff_size: 100, providers: ["augment"] }] },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.equal(config.providersForDiffSize(50), null);
+  assert.equal(config.providersForDiffSize(undefined), null);
+  assert.equal(config.providersForDiffSize(NaN), null);
+
+  const noGroups = await loadAiReviewConfig(makeContext({ configValue: { providers: ["copilot"] } }));
+  assert.equal(noGroups.providersForDiffSize(10), null);
+});
+
+test("providersForDiffSize: a band never enables a provider the top level disabled", async () => {
+  const ctx = makeContext({
+    configValue: {
+      providers: ["copilot"],
+      ai_review: {
+        provider_groups: [
+          { max_diff_size: 99, providers: ["copilot", "augment"] },
+          { min_diff_size: 100, providers: ["augment"] },
+        ],
+      },
+    },
+  });
+  const config = await loadAiReviewConfig(ctx);
+  assert.deepEqual([...config.providersForDiffSize(10)], ["copilot"]);
+  // The large band is augment-only and augment is off → no restriction.
+  assert.equal(config.providersForDiffSize(500), null);
 });
