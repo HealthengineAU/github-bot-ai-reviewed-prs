@@ -214,6 +214,24 @@ test("detectPendingAiReviewRequests: bot requested_reviewers become requests", (
   assert.equal(requests[0].userId, 9);
 });
 
+test("detectPendingAiReviewRequests: the payload's requested_reviewer counts", () => {
+  const requests = detectPendingAiReviewRequests({
+    pr: { requested_reviewers: [] },
+    requestedReviewer: { login: "Copilot", type: "Bot", id: 175728472 },
+  });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].provider, "copilot");
+  assert.equal(requests[0].userId, 175728472);
+});
+
+test("detectPendingAiReviewRequests: the payload's requested_reviewer isn't double counted", () => {
+  const requests = detectPendingAiReviewRequests({
+    pr: { requested_reviewers: [COPILOT_REVIEWER] },
+    requestedReviewer: COPILOT_REVIEWER,
+  });
+  assert.equal(requests.length, 1);
+});
+
 test("detectPendingAiReviewRequests: auggie and ai-review team requests", () => {
   const requests = detectPendingAiReviewRequests({
     pr: {

@@ -862,3 +862,50 @@ test("a delivered Augment review wins over its own summon", async (t) => {
   assert.match(statuses[0].args.description, /Reviewed by Auggie/);
   assert.doesNotMatch(statuses[0].args.description, /Requested/);
 });
+
+test("a review_requested payload reviewer counts even before it lands in the PR", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const octokit = makeOctokit();
+  const context = makeContext({
+    octokit,
+    payload: {
+      pull_request: makeOpenPr({ requested_reviewers: [] }),
+      requested_reviewer: { login: "Copilot", type: "Bot", id: 175728472 },
+    },
+  });
+
+  await dispatch("pull_request.review_requested", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.match(statuses[0].args.description, /Requested Copilot/);
+});
+
+test("an edited bot review updates the status (Copilot never emits submitted)", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { app, dispatch } = makeApp();
+  register(app);
+  const copilot = { login: "copilot-pull-request-reviewer[bot]", type: "Bot", id: 175728472 };
+  const octokit = makeOctokit({
+    "paginate:rest.pulls.listReviews": [
+      { user: copilot, state: "COMMENTED", body: "Copilot reviewed 2 files.", submitted_at: "2026-07-01T00:00:00Z" },
+    ],
+  });
+  const context = makeContext({
+    octokit,
+    payload: {
+      review: { user: copilot, state: "commented", body: "Copilot reviewed 2 files." },
+      pull_request: makeOpenPr(),
+    },
+  });
+
+  await dispatch("pull_request_review.edited", context);
+  await flushDebounce(t);
+
+  const statuses = statusCalls(octokit);
+  assert.equal(statuses.length, 1);
+  assert.match(statuses[0].args.description, /Reviewed by Copilot/);
+});

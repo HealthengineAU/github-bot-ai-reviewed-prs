@@ -198,3 +198,19 @@ test("no agents configured → nothing dispatches", async (t) => {
   });
   assert.equal(octokit.calls.length, 0);
 });
+
+test("an edited review dispatches too (Copilot never emits submitted)", async (t) => {
+  const octokit = makeOctokit();
+  await fire(t, {
+    event: "pull_request_review.edited",
+    octokit,
+    payload: {
+      repository: { name: "svc" },
+      pull_request: { number: 11, user: { login: "dusty-the-robot[bot]" } },
+      review: { user: { login: "Copilot", type: "Bot" }, state: "commented", body: "1 suggestion" },
+    },
+  });
+  const calls = dispatches(octokit);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args.inputs.actor, "Copilot");
+});
