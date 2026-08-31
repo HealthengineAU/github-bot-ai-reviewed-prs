@@ -466,6 +466,51 @@ test("auto-trigger: a large PR is routed to its band's provider", async (t) => {
   assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
 });
 
+test("auto-trigger: provider_group_metric additions routes a big deletion to the small band", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({
+      providers: ["augment", "copilot"],
+      ai_review: { provider_groups: SIZE_BANDS, provider_group_metric: "additions" },
+    }),
+    payload: makePayload({ additions: 0, deletions: 1682 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
+});
+
+test("auto-trigger: provider_group_metric additions keeps an addition-heavy PR on the large band", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({
+      providers: ["augment", "copilot"],
+      ai_review: { provider_groups: SIZE_BANDS, provider_group_metric: "additions" },
+    }),
+    payload: makePayload({ additions: 120, deletions: 5 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
+});
+
+test("auto-trigger: provider_group_metric never narrows diff-size eligibility", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({
+      providers: ["augment", "copilot"],
+      ai_review: {
+        provider_groups: SIZE_BANDS,
+        provider_group_metric: "additions",
+        min_diff_size: 10,
+      },
+    }),
+    payload: makePayload({ additions: 0, deletions: 400 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+});
+
 test("auto-trigger: a band naming only disabled providers falls back to the enabled pool", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {

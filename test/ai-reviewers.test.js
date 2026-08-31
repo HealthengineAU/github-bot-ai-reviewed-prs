@@ -8,6 +8,8 @@ import {
   detectPendingAiReviewRequests,
   getBotDisplayName,
   getBotKey,
+  getDiffSize,
+  getProviderGroupSize,
   hasCompletedAiReview,
   hasPendingAuggieSummon,
   isAuggieCommandComment,
@@ -330,4 +332,31 @@ test("hasCompletedAiReview: human reviews and empty lists do not", () => {
   assert.equal(hasCompletedAiReview([{ user: HUMAN }]), false);
   assert.equal(hasCompletedAiReview([]), false);
   assert.equal(hasCompletedAiReview(), false);
+});
+
+// ---------------------------------------------------------------------------
+// getDiffSize / getProviderGroupSize
+// ---------------------------------------------------------------------------
+
+test("getDiffSize: additions + deletions", () => {
+  assert.equal(getDiffSize({ additions: 40, deletions: 60 }), 100);
+  assert.equal(getDiffSize({ additions: 40 }), 40);
+  assert.equal(getDiffSize({}), 0);
+  assert.equal(getDiffSize(undefined), 0);
+});
+
+test("getProviderGroupSize: defaults to the full diff", () => {
+  const pr = { additions: 40, deletions: 60 };
+  assert.equal(getProviderGroupSize(pr, { providerGroupMetric: "total" }), 100);
+  assert.equal(getProviderGroupSize(pr, {}), 100);
+  assert.equal(getProviderGroupSize(pr, undefined), 100);
+});
+
+test("getProviderGroupSize: additions metric ignores deletions", () => {
+  const aiReview = { providerGroupMetric: "additions" };
+  assert.equal(getProviderGroupSize({ additions: 40, deletions: 60 }, aiReview), 40);
+  // A large deletion lands in the small band instead of the large one.
+  assert.equal(getProviderGroupSize({ additions: 0, deletions: 1682 }, aiReview), 0);
+  assert.equal(getProviderGroupSize({ deletions: 500 }, aiReview), 0);
+  assert.equal(getProviderGroupSize(undefined, aiReview), 0);
 });

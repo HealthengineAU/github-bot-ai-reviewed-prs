@@ -5,6 +5,7 @@ import {
   KNOWN_PROVIDERS,
   normalizeAiReview,
   normalizeBotPrHumanApprovers,
+  normalizeProviderGroupMetric,
   normalizeProviderGroups,
   normalizeProviders,
   normalizeSkipAuthors,
@@ -365,7 +366,7 @@ test("loadAiReviewConfig: aiReview defaults apply when the key is absent", async
 });
 
 // ---------------------------------------------------------------------------
-// normalizeProviderGroups / providersForDiffSize
+// normalizeProviderGroups / providersForBandSize
 // ---------------------------------------------------------------------------
 
 test("normalizeProviderGroups: returns [] for non-arrays", () => {
@@ -398,7 +399,7 @@ test("normalizeProviderGroups: drops bands without usable providers", () => {
   assert.deepEqual([...groups[0].providers].sort(), ["augment", "copilot"]);
 });
 
-test("providersForDiffSize: first matching band wins", async () => {
+test("providersForBandSize: first matching band wins", async () => {
   const ctx = makeContext({
     configValue: {
       providers: ["augment", "copilot"],
@@ -411,13 +412,13 @@ test("providersForDiffSize: first matching band wins", async () => {
     },
   });
   const config = await loadAiReviewConfig(ctx);
-  assert.deepEqual([...config.providersForDiffSize(10)], ["copilot"]);
-  assert.deepEqual([...config.providersForDiffSize(99)], ["copilot"]);
-  assert.deepEqual([...config.providersForDiffSize(100)], ["augment"]);
-  assert.deepEqual([...config.providersForDiffSize(5000)], ["augment"]);
+  assert.deepEqual([...config.providersForBandSize(10)], ["copilot"]);
+  assert.deepEqual([...config.providersForBandSize(99)], ["copilot"]);
+  assert.deepEqual([...config.providersForBandSize(100)], ["augment"]);
+  assert.deepEqual([...config.providersForBandSize(5000)], ["augment"]);
 });
 
-test("providersForDiffSize: null when no band matches, none configured, or the size is unknown", async () => {
+test("providersForBandSize: null when no band matches, none configured, or the size is unknown", async () => {
   const ctx = makeContext({
     configValue: {
       providers: ["augment", "copilot"],
@@ -425,15 +426,32 @@ test("providersForDiffSize: null when no band matches, none configured, or the s
     },
   });
   const config = await loadAiReviewConfig(ctx);
-  assert.equal(config.providersForDiffSize(50), null);
-  assert.equal(config.providersForDiffSize(undefined), null);
-  assert.equal(config.providersForDiffSize(NaN), null);
+  assert.equal(config.providersForBandSize(50), null);
+  assert.equal(config.providersForBandSize(undefined), null);
+  assert.equal(config.providersForBandSize(NaN), null);
 
   const noGroups = await loadAiReviewConfig(makeContext({ configValue: { providers: ["copilot"] } }));
-  assert.equal(noGroups.providersForDiffSize(10), null);
+  assert.equal(noGroups.providersForBandSize(10), null);
 });
 
-test("providersForDiffSize: a band never enables a provider the top level disabled", async () => {
+test("normalizeProviderGroupMetric: accepts total and additions, defaults everything else", () => {
+  assert.equal(normalizeProviderGroupMetric("additions"), "additions");
+  assert.equal(normalizeProviderGroupMetric(" Additions "), "additions");
+  assert.equal(normalizeProviderGroupMetric("total"), "total");
+  assert.equal(normalizeProviderGroupMetric(undefined), "total");
+  assert.equal(normalizeProviderGroupMetric("addition"), "total");
+  assert.equal(normalizeProviderGroupMetric(100), "total");
+});
+
+test("normalizeAiReview: providerGroupMetric defaults to total", () => {
+  assert.equal(normalizeAiReview({}).providerGroupMetric, "total");
+  assert.equal(
+    normalizeAiReview({ provider_group_metric: "additions" }).providerGroupMetric,
+    "additions",
+  );
+});
+
+test("providersForBandSize: a band never enables a provider the top level disabled", async () => {
   const ctx = makeContext({
     configValue: {
       providers: ["copilot"],
@@ -446,7 +464,7 @@ test("providersForDiffSize: a band never enables a provider the top level disabl
     },
   });
   const config = await loadAiReviewConfig(ctx);
-  assert.deepEqual([...config.providersForDiffSize(10)], ["copilot"]);
+  assert.deepEqual([...config.providersForBandSize(10)], ["copilot"]);
   // The large band is augment-only and augment is off → no restriction.
-  assert.equal(config.providersForDiffSize(500), null);
+  assert.equal(config.providersForBandSize(500), null);
 });

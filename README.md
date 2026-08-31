@@ -105,6 +105,11 @@ ai_review:
     - min_diff_size: 100 # band's providers are all disabled, or no band covers
       providers:         # the diff size, the full enabled pool is used.
         - augment
+  provider_group_metric: total  # what the bands above measure: "total"
+                                # (additions + deletions, the default) or
+                                # "additions", which sends delete-heavy PRs to
+                                # the smaller band. Never affects the
+                                # min/max_diff_size eligibility bounds.
   bot_pr_human_approvers:  # human approvals required on bot-authored PRs
     min: 2                 # minimum number of human approvers
     exclude:               # bot authors exempt from the requirement
