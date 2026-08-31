@@ -478,3 +478,30 @@ test("auto-trigger: a band naming only disabled providers falls back to the enab
   });
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
 });
+
+const LINES_ADDED_BANDS = [
+  { min_lines_added: 80, max_lines_added: 2000, providers: ["augment"] },
+  { providers: ["copilot"] },
+];
+
+test("auto-trigger: a delete-heavy PR is routed by lines added, not diff size", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: groupedConfig(LINES_ADDED_BANDS),
+    payload: makePayload({ additions: 4, deletions: 1500 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
+});
+
+test("auto-trigger: a PR inside the lines-added band is routed to Auggie", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: groupedConfig(LINES_ADDED_BANDS),
+    payload: makePayload({ additions: 120, deletions: 30 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
+});
