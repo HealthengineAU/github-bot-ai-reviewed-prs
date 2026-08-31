@@ -435,19 +435,19 @@ test("providersForBandSize: null when no band matches, none configured, or the s
 });
 
 test("normalizeProviderGroupMetric: accepts total and additions, defaults everything else", () => {
-  assert.equal(normalizeProviderGroupMetric("additions"), "additions");
-  assert.equal(normalizeProviderGroupMetric(" Additions "), "additions");
   assert.equal(normalizeProviderGroupMetric("total"), "total");
-  assert.equal(normalizeProviderGroupMetric(undefined), "total");
-  assert.equal(normalizeProviderGroupMetric("addition"), "total");
-  assert.equal(normalizeProviderGroupMetric(100), "total");
+  assert.equal(normalizeProviderGroupMetric(" Total "), "total");
+  assert.equal(normalizeProviderGroupMetric("additions"), "additions");
+  assert.equal(normalizeProviderGroupMetric(undefined), "additions");
+  assert.equal(normalizeProviderGroupMetric("addition"), "additions");
+  assert.equal(normalizeProviderGroupMetric(100), "additions");
 });
 
-test("normalizeAiReview: providerGroupMetric defaults to total", () => {
-  assert.equal(normalizeAiReview({}).providerGroupMetric, "total");
+test("normalizeAiReview: providerGroupMetric defaults to additions", () => {
+  assert.equal(normalizeAiReview({}).providerGroupMetric, "additions");
   assert.equal(
-    normalizeAiReview({ provider_group_metric: "additions" }).providerGroupMetric,
-    "additions",
+    normalizeAiReview({ provider_group_metric: "total" }).providerGroupMetric,
+    "total",
   );
 });
 

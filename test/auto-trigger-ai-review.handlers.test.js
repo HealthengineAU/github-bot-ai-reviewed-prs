@@ -460,7 +460,7 @@ test("auto-trigger: a large PR is routed to its band's provider", async (t) => {
   await dispatchAutoTrigger(t, {
     octokit,
     config: groupedConfig(SIZE_BANDS),
-    payload: makePayload({ additions: 90, deletions: 90 }),
+    payload: makePayload({ additions: 180, deletions: 0 }),
   });
   assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 0);
   assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
