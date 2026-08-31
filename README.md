@@ -99,13 +99,18 @@ ai_review:
                          # PRs under min_diff_size also pass the "AI Review"
                          # status without a review (0 disables both)
   provider_groups:       # optional: restrict which providers an invite picks
-    - max_diff_size: 99  # from, by diff size. First matching band wins; a band
-      providers:         # picks at random from its (enabled) providers.
-        - copilot        # Bands only narrow the `providers` list above — if a
-    - min_diff_size: 100 # band's providers are all disabled, or no band covers
-      providers:         # the diff size, the full enabled pool is used.
+    - min_diff_size: 0   # from, by diff size. First matching band wins; a band
+      max_diff_size: 99  # picks at random from its (enabled) providers.
+      providers:         # Bands only narrow the `providers` list above — if a
+        - copilot        # band's providers are all disabled, or no band covers
+    - min_diff_size: 100 # the size, the full enabled pool is used.
+      providers:
         - augment
-  provider_group_metric: additions  # either "total" (added + deleted LOC) or "additions"
+  provider_group_metric: additions  # either "total" (added + deleted LOC) or "additions".
+                                    # Under "additions" the smallest band must
+                                    # start at min_diff_size: 0 — a pure deletion
+                                    # has 0 additions, and an unbanded PR falls
+                                    # back to the full enabled pool.
   bot_pr_human_approvers:  # human approvals required on bot-authored PRs
     min: 2                 # minimum number of human approvers
     exclude:               # bot authors exempt from the requirement

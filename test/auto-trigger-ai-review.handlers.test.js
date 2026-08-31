@@ -494,6 +494,48 @@ test("auto-trigger: provider_group_metric additions keeps an addition-heavy PR o
   assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
 });
 
+// A pure deletion has 0 additions, so the small band must start at 0 or the PR
+// matches no band and falls back to a random pick from every enabled provider.
+test("auto-trigger: an additions band starting above 0 leaves a pure deletion unbanded", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({
+      providers: ["augment"],
+      ai_review: {
+        provider_groups: [
+          { min_diff_size: 10, max_diff_size: 99, providers: ["copilot"] },
+          { min_diff_size: 100, providers: ["augment"] },
+        ],
+        provider_group_metric: "additions",
+      },
+    }),
+    payload: makePayload({ additions: 5, deletions: 400 }),
+  });
+  // Only augment is enabled, so the fallback pool is deterministic here.
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 1);
+});
+
+test("auto-trigger: an additions band starting at 0 catches a pure deletion", async (t) => {
+  const octokit = makeOctokit();
+  await dispatchAutoTrigger(t, {
+    octokit,
+    config: fakeConfig({
+      providers: ["augment", "copilot"],
+      ai_review: {
+        provider_groups: [
+          { min_diff_size: 0, max_diff_size: 99, providers: ["copilot"] },
+          { min_diff_size: 100, providers: ["augment"] },
+        ],
+        provider_group_metric: "additions",
+      },
+    }),
+    payload: makePayload({ additions: 5, deletions: 400 }),
+  });
+  assert.equal(countCalls(octokit, "rest.pulls.requestReviewers"), 1);
+  assert.equal(countCalls(octokit, "rest.issues.createComment"), 0);
+});
+
 test("auto-trigger: provider_group_metric never narrows diff-size eligibility", async (t) => {
   const octokit = makeOctokit();
   await dispatchAutoTrigger(t, {
